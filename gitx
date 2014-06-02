@@ -1,0 +1,57 @@
+#!/bin/bash
+
+while [ $PWD != "/" ]
+do
+    if test -f .gitslave
+    then
+        break
+    fi
+    cd ..
+done
+if [ $PWD == "/" ]
+    then
+        exit 1
+    fi
+
+
+
+repos=". $(cat .gitslave|cut -d \" -f 4)"
+dir=$(mktemp -d)
+dir2=$(mktemp -d)
+for i in $repos
+do
+    (
+    cd $i
+    if [ $i == "." ]
+    then
+        i="super"
+    fi
+    echo -en "$i"
+    git $@ &> "$dir/${i//\//_}"
+    res=$?
+    if [ $res -gt 0 ]
+    then
+        echo -e "\e[1;31mBad exit code $res\e[0m" >> "$dir/${i//\//_}"
+        echo -e "\e[1m [\e[1;31m $res \e[1;37m]"
+    else
+        echo -e "\e[1m [\e[1;32m OK \e[1;37m]"
+    fi
+    sum="$(cat "$dir/${i//\//_}"|md5sum|awk '{print $1}')"
+    echo $i >> "$dir2/$sum"
+    )
+done
+for i in $dir2/*
+do
+    rep=$(head -n 1 $i)
+    if grep -qi "Bad exit code" $dir/${rep//\//_}
+    then
+    echo -en "\e[1;31mOn: "
+    else
+    echo -en "\e[1;32mOn: "
+    fi
+    cat $i|tr "\n" " "
+    echo -e "\e[0m"
+    cat $dir/${rep//\//_}
+done
+rm -rf "$dir" "$dir2"
+
