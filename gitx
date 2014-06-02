@@ -14,6 +14,17 @@ if [ $PWD == "/" ]
     fi
 
 
+if [ $1 == "add" ]
+then
+    shift
+    for f in $@
+    do
+    (
+    cd $(dirname "$f")
+    git add $(basename "$f")
+    )
+done
+    else
 
 repos=". $(cat .gitslave|cut -d \" -f 4)"
 dir=$(mktemp -d)
@@ -27,7 +38,7 @@ do
         i="super"
     fi
     echo -en "$i"
-    git $@ &> "$dir/${i//\//_}"
+    git "$@" &> "$dir/${i//\//_}"
     res=$?
     if [ $res -gt 0 ]
     then
@@ -55,3 +66,4 @@ do
 done
 rm -rf "$dir" "$dir2"
 
+    fi
