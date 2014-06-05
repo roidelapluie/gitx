@@ -1,5 +1,16 @@
 #!/bin/bash
 
+if [ "x$1" == "xadd" ]
+then
+    shift
+    for f in $@
+    do
+    (
+    cd $(dirname "$f")
+    git add $(basename "$f")
+    )
+done
+    else
 while [ $PWD != "/" ]
 do
     if test -f .gitslave
@@ -14,56 +25,105 @@ if [ $PWD == "/" ]
     fi
 
 
-if [ $1 == "add" ]
-then
-    shift
-    for f in $@
-    do
-    (
-    cd $(dirname "$f")
-    git add $(basename "$f")
-    )
-done
-    else
 
+        if echo $BASH_VERSION|grep -q ^4.2
+        then
+            okms="$(printf '\u2714')"
+            noms="$(printf '\u2718')"
+        else
+            okms="+"
+            noms="-"
+
+        fi
 repos=". $(cat .gitslave|cut -d \" -f 4)"
 dir=$(mktemp -d)
 dir2=$(mktemp -d)
+echo -n "Running \"git $@\" on $(echo $repos|wc -w) repositories "
+echo -n "["
+for i in $(seq 1 $(echo $repos|wc -w));
+do
+    echo -n " "
+done
+echo -n "]"
+    echo -en "\e[G"
+
+echo -n "Running \"git $@\" on $(echo $repos|wc -w) repositories ["
 for i in $repos
 do
+    if [ $i == "." ]
+    then
+        reposub="$(git remote -v|grep origin|grep '(fetch)'|rev|cut -d / -f 1|rev|awk '{print $1}')"
+    else
+        reposub="$(awk -F '"' "\$4==\"$i\" {print \$2}" .gitslave|cut -d / -f 2)"
+    fi
     (
     cd $i
     if [ $i == "." ]
     then
         i="super"
     fi
-    echo -en "$i"
     git "$@" &> "$dir/${i//\//_}"
     res=$?
+    sed -i "s/$reposub/%REPO%/g" "$dir/${i//\//_}"
     if [ $res -gt 0 ]
     then
         echo -e "\e[1;31mBad exit code $res\e[0m" >> "$dir/${i//\//_}"
-        echo -e "\e[1m [\e[1;31m $res \e[1;37m]"
+        echo -en "\e[1;31m${noms}\e[1;37m"
     else
-        echo -e "\e[1m [\e[1;32m OK \e[1;37m]"
+        echo -en "\e[1;32m${okms}\e[1;37m"
     fi
     sum="$(cat "$dir/${i//\//_}"|md5sum|awk '{print $1}')"
     echo $i >> "$dir2/$sum"
-    )
+    ) &
+    if [ $i == "super" ]
+    then
+        sleep 0.2
+    fi
+    if [ $(jobs -p|wc -l) -gt 4 ]
+    then
+        pid=$(jobs -p|sort -R|head -n 1)
+        wait $(jobs -p|sort -R|head -n 1)
+    fi
 done
+wait
+echo
+ok=0
+nok=0
+
 for i in $dir2/*
 do
+    echo
     rep=$(head -n 1 $i)
+    n=$(cat $i|wc -l)
     if grep -qi "Bad exit code" $dir/${rep//\//_}
     then
     echo -en "\e[1;31mOn: "
+    let nok+=$n
     else
     echo -en "\e[1;32mOn: "
+    let ok+=$n
     fi
-    cat $i|tr "\n" " "
+    cat $i|xargs echo -n
+    [ $n -gt 1 ] && echo -n " ($n repos)"
     echo -e "\e[0m"
-    cat $dir/${rep//\//_}
+    if [ $rep == "super" ]
+    then
+        reposub="$(git remote -v|grep origin|grep '(fetch)'|rev|cut -d / -f 1|rev|awk '{print $1}')"
+    else
+        reposub="$(awk -F '"' "\$4==\"$rep\" {print \$2}" .gitslave|cut -d / -f 2)"
+    fi
+    if [ "$(cat $i|wc -l)" -gt 1 ]
+    then
+        cat $dir/${rep//\//_}
+    else
+        cat $dir/${rep//\//_}|sed "s/%REPO%/$reposub/g"
+    fi
 done
+echo
+echo "--"
+[ "$ok" -gt 0 ] && echo -e "\e[0;32m"Success on $ok repos
+[ "$nok" -gt 0 ] && echo -e "\e[0;31m"Failure on $nok repos
+echo -en "\e[0m"
 rm -rf "$dir" "$dir2"
 
     fi
